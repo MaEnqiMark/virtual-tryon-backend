@@ -1,0 +1,8 @@
+backend/catalog/images/
+*.zip
+*.tar
+*.tar.gz
+*.npz
+*.ipynb_checkpoints/
+__pycache__/
+.env
