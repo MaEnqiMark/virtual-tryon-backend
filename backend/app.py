@@ -14,28 +14,32 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from llm_stylist import (
-    TOPS, BOTTOMS,
-    call_openai_stylist, call_openai_stylist_for_bottom,
-    match_bottom, match_top,
+    TOPS,
+    BOTTOMS,
+    call_openai_stylist,
+    call_openai_stylist_for_bottom,
+    match_bottom,
+    match_top,
     extract_metadata_from_image,
 )
 
 # ------------------------------------------------------
-# Data / images: ensure dataset exists in /data
+# Data / images: ensure Kaggle dataset exists in /data
 # ------------------------------------------------------
 
 DATA_ROOT = Path("/data")
-IMAGES_DIR = DATA_ROOT / "catalog" / "images"
+# After extracting the Kaggle dataset, we expect images at /data/images/<id>.jpg
+IMAGES_DIR = DATA_ROOT / "images"
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
 
 
 def ensure_images_dataset() -> None:
     """
-    Make sure /data/catalog/images exists and contains images.
+    Make sure /data/images exists and contains images.
 
     If there are already .jpg files there (persistent disk case),
-    do nothing. Otherwise, download a zip from DATASET_URL and
-    extract it into /data/catalog/images.
+    do nothing. Otherwise, download a zip from DATASET_URL (Kaggle),
+    using KAGGLE_USERNAME/KAGGLE_KEY for auth, and extract it into /data.
     """
     # If images already exist, we're done (disk is warm).
     if IMAGES_DIR.exists():
@@ -44,39 +48,63 @@ def ensure_images_dataset() -> None:
             print(f"[dataset] Found {len(jpgs)} images in {IMAGES_DIR}, skipping download.")
             return
 
-    # No images yet: need to download.
     url = os.environ.get("DATASET_URL")
     if not url:
         raise RuntimeError(
-            "[dataset] No images in /data/catalog/images and DATASET_URL is not set. "
-            "Set DATASET_URL to a zip file URL containing your catalog images."
+            "[dataset] No images in /data/images and DATASET_URL is not set. "
+            "Set DATASET_URL to a Kaggle dataset download URL."
         )
 
     print(f"[dataset] No images found, downloading dataset from {url}")
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
-    # Download zip
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
+    # Kaggle API auth
+    kaggle_user = os.environ.get("KAGGLE_USERNAME")
+    kaggle_key = os.environ.get("KAGGLE_KEY")
+    if not kaggle_user or not kaggle_key:
+        raise RuntimeError(
+            "[dataset] DATASET_URL is Kaggle, but KAGGLE_USERNAME/KAGGLE_KEY "
+            "are not set in the environment. "
+            "Go to Kaggle → Create API Token, then set those env vars in Render."
+        )
+
+    print(f"[dataset] Downloading zip from Kaggle as {kaggle_user}...")
+    with requests.get(url, stream=True, auth=(kaggle_user, kaggle_key)) as r:
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            snippet = r.text[:500]
+            raise RuntimeError(
+                f"[dataset] Failed to download dataset from {url}: {e}\n"
+                f"Response snippet:\n{snippet}"
+            ) from e
+
         with ZIP_PATH.open("wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
 
     print(f"[dataset] Downloaded zip to {ZIP_PATH}, extracting...")
+    # Extract into /data so we get /data/images/<id>.jpg and /data/styles_subset.csv
     with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
-        zip_ref.extractall(IMAGES_DIR)
+        zip_ref.extractall(DATA_ROOT)
 
-    print(f"[dataset] Extracted images to {IMAGES_DIR}")
-    # Optional: you can delete the zip to save space
+    print(f"[dataset] Extracted dataset to {DATA_ROOT}")
     try:
         ZIP_PATH.unlink()
         print(f"[dataset] Deleted zip {ZIP_PATH}")
     except FileNotFoundError:
         pass
 
+    # Sanity: check images now exist
+    if not IMAGES_DIR.exists() or not list(IMAGES_DIR.glob("*.jpg")):
+        raise RuntimeError(
+            f"[dataset] Expected images under {IMAGES_DIR}, but none were found after extraction. "
+            "Check the structure of your Kaggle dataset zip."
+        )
 
-# Ensure dataset before creating the app / mounting static files
+
+# Ensure dataset before mounting static files
 ensure_images_dataset()
 
 # ------------------------------------------------------
@@ -102,7 +130,7 @@ app.add_middleware(
 
 # ------------------------------------------------------
 # Static files: serve catalog images
-# /static/<id>.jpg -> /data/catalog/images/<id>.jpg
+# /static/<id>.jpg -> /data/images/<id>.jpg
 # ------------------------------------------------------
 app.mount("/static", StaticFiles(directory=str(IMAGES_DIR)), name="static")
 
