@@ -1,5 +1,10 @@
 # app.py
 
+import os
+from pathlib import Path
+import zipfile
+
+import requests
 import pandas as pd
 from typing import Optional
 
@@ -7,7 +12,6 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from fastapi.staticfiles import StaticFiles
 
 from llm_stylist import (
     TOPS, BOTTOMS,
@@ -15,6 +19,69 @@ from llm_stylist import (
     match_bottom, match_top,
     extract_metadata_from_image,
 )
+
+# ------------------------------------------------------
+# Data / images: ensure dataset exists in /data
+# ------------------------------------------------------
+
+DATA_ROOT = Path("/data")
+IMAGES_DIR = DATA_ROOT / "catalog" / "images"
+ZIP_PATH = DATA_ROOT / "catalog_images.zip"
+
+
+def ensure_images_dataset() -> None:
+    """
+    Make sure /data/catalog/images exists and contains images.
+
+    If there are already .jpg files there (persistent disk case),
+    do nothing. Otherwise, download a zip from DATASET_URL and
+    extract it into /data/catalog/images.
+    """
+    # If images already exist, we're done (disk is warm).
+    if IMAGES_DIR.exists():
+        jpgs = list(IMAGES_DIR.glob("*.jpg"))
+        if jpgs:
+            print(f"[dataset] Found {len(jpgs)} images in {IMAGES_DIR}, skipping download.")
+            return
+
+    # No images yet: need to download.
+    url = os.environ.get("DATASET_URL")
+    if not url:
+        raise RuntimeError(
+            "[dataset] No images in /data/catalog/images and DATASET_URL is not set. "
+            "Set DATASET_URL to a zip file URL containing your catalog images."
+        )
+
+    print(f"[dataset] No images found, downloading dataset from {url}")
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Download zip
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with ZIP_PATH.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    print(f"[dataset] Downloaded zip to {ZIP_PATH}, extracting...")
+    with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
+        zip_ref.extractall(IMAGES_DIR)
+
+    print(f"[dataset] Extracted images to {IMAGES_DIR}")
+    # Optional: you can delete the zip to save space
+    try:
+        ZIP_PATH.unlink()
+        print(f"[dataset] Deleted zip {ZIP_PATH}")
+    except FileNotFoundError:
+        pass
+
+
+# Ensure dataset before creating the app / mounting static files
+ensure_images_dataset()
+
+# ------------------------------------------------------
+# FastAPI app
+# ------------------------------------------------------
 
 app = FastAPI(
     title="Virtual Try-On Stylist API",
@@ -35,9 +102,9 @@ app.add_middleware(
 
 # ------------------------------------------------------
 # Static files: serve catalog images
-# /static/<id>.jpg -> catalog/images/<id>.jpg
+# /static/<id>.jpg -> /data/catalog/images/<id>.jpg
 # ------------------------------------------------------
-app.mount("/static", StaticFiles(directory="/data/catalog/images"), name="static")
+app.mount("/static", StaticFiles(directory=str(IMAGES_DIR)), name="static")
 
 
 # ------------------------------------------------------
@@ -205,8 +272,6 @@ async def suggest_from_photo(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Unclear garment_kind: {garment_kind}")
 
     # 2) Infer occasion + vibe from metadata
-    #    usage is already one of: Casual, Formal, Sports, Party
-    #    styleVibe is already one of: minimal, streetwear, sporty, preppy, casual, classy
     occasion = meta.get("usage", "Casual")
     vibe = meta.get("styleVibe", "minimal")
 
@@ -278,7 +343,7 @@ async def suggest_from_photo(file: UploadFile = File(...)):
         }
 
     return {
-        "input_metadata": meta,       # raw vision output (already normalized)
+        "input_metadata": meta,
         "inferred_occasion": occasion,
         "inferred_vibe": vibe,
         "normalized_item": input_item,
