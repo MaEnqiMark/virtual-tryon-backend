@@ -38,8 +38,8 @@ def ensure_images_dataset() -> None:
     Make sure /data/images exists and contains images.
 
     If there are already .jpg files there (persistent disk case),
-    do nothing. Otherwise, download a zip from DATASET_URL (Kaggle),
-    using KAGGLE_USERNAME/KAGGLE_KEY for auth, and extract it into /data.
+    do nothing. Otherwise, download a zip from DATASET_URL (HuggingFace, etc.)
+    and extract it into /data so we get /data/images/<id>.jpg.
     """
     # If images already exist, we're done (disk is warm).
     if IMAGES_DIR.exists():
@@ -50,58 +50,44 @@ def ensure_images_dataset() -> None:
 
     url = os.environ.get("DATASET_URL")
     if not url:
-        raise RuntimeError(
+        print(
             "[dataset] No images in /data/images and DATASET_URL is not set. "
-            "Set DATASET_URL to a Kaggle dataset download URL."
+            "Service will run, but /static/<id>.jpg will 404 until you upload images."
         )
+        return
 
     print(f"[dataset] No images found, downloading dataset from {url}")
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
 
-    # Kaggle API auth
-    kaggle_user = os.environ.get("KAGGLE_USERNAME")
-    kaggle_key = os.environ.get("KAGGLE_KEY")
-    if not kaggle_user or not kaggle_key:
-        raise RuntimeError(
-            "[dataset] DATASET_URL is Kaggle, but KAGGLE_USERNAME/KAGGLE_KEY "
-            "are not set in the environment. "
-            "Go to Kaggle → Create API Token, then set those env vars in Render."
-        )
-
-    print(f"[dataset] Downloading zip from Kaggle as {kaggle_user}...")
-    with requests.get(url, stream=True, auth=(kaggle_user, kaggle_key)) as r:
-        try:
-            r.raise_for_status()
-        except requests.HTTPError as e:
-            snippet = r.text[:500]
-            raise RuntimeError(
-                f"[dataset] Failed to download dataset from {url}: {e}\n"
-                f"Response snippet:\n{snippet}"
-            ) from e
-
-        with ZIP_PATH.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-    print(f"[dataset] Downloaded zip to {ZIP_PATH}, extracting...")
-    # Extract into /data so we get /data/images/<id>.jpg and /data/styles_subset.csv
-    with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
-        zip_ref.extractall(DATA_ROOT)
-
-    print(f"[dataset] Extracted dataset to {DATA_ROOT}")
     try:
-        ZIP_PATH.unlink()
-        print(f"[dataset] Deleted zip {ZIP_PATH}")
-    except FileNotFoundError:
-        pass
+        with requests.get(url, stream=True, timeout=600) as r:
+            r.raise_for_status()
+            with ZIP_PATH.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+        print(f"[dataset] Downloaded zip to {ZIP_PATH}, extracting...")
 
-    # Sanity: check images now exist
-    if not IMAGES_DIR.exists() or not list(IMAGES_DIR.glob("*.jpg")):
-        raise RuntimeError(
-            f"[dataset] Expected images under {IMAGES_DIR}, but none were found after extraction. "
-            "Check the structure of your Kaggle dataset zip."
+        # IMPORTANT: this assumes the zip has an `images/` folder at its root,
+        # so after extraction you get /data/images/<id>.jpg
+        with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
+            zip_ref.extractall(DATA_ROOT)
+
+        print(f"[dataset] Extracted dataset to {DATA_ROOT}")
+    except Exception as e:
+        print(f"[dataset] WARNING: Failed to download or extract dataset: {e}")
+        print(
+            "[dataset] Service will still run, but /static/<id>.jpg "
+            "will 404 until images exist under /data/images."
         )
+    finally:
+        if ZIP_PATH.exists():
+            try:
+                ZIP_PATH.unlink()
+                print(f"[dataset] Deleted zip {ZIP_PATH}")
+            except OSError:
+                pass
+
 
 
 # Ensure dataset before mounting static files
