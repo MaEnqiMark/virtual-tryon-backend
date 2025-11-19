@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 
 from llm_stylist import (
     TOPS, BOTTOMS,
@@ -36,7 +37,7 @@ app.add_middleware(
 # Static files: serve catalog images
 # /static/<id>.jpg -> catalog/images/<id>.jpg
 # ------------------------------------------------------
-app.mount("/static", StaticFiles(directory="catalog/images"), name="static")
+app.mount("/static", StaticFiles(directory="/data/catalog/images"), name="static")
 
 
 # ------------------------------------------------------
