@@ -30,6 +30,7 @@ from llm_stylist import (
 DATA_ROOT = Path("/data")
 # After extracting the Kaggle dataset, we expect images at /data/images/<id>.jpg
 IMAGES_DIR = DATA_ROOT / "images"
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)  # 👈 ensure directory exists
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
 
 
