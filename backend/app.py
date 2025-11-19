@@ -103,9 +103,10 @@ app = FastAPI(
 # Run dataset download in the background after the server starts
 @app.on_event("startup")
 async def startup_populate_images():
+    # Fire-and-forget background task; do NOT await
     loop = asyncio.get_event_loop()
-    # run blocking download/extract in a thread so we don't block uvicorn
-    await loop.run_in_executor(None, ensure_images_dataset)
+    loop.create_task(asyncio.to_thread(ensure_images_dataset))
+    print("[startup] Scheduled background dataset check/download.")
 
 # ------------------------------------------------------
 # CORS (so your teammate's frontend can call the API)
