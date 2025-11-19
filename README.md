@@ -152,6 +152,45 @@ Example:
 
 <img src="https://virtual-tryon-backend-974u.onrender.com/static/10025.jpg" />
 
+🧾 NEW: User History API (upload + list)
+
+This allows the frontend to save what users tried on before.
+
+POST /history/upload
+
+Upload any user try-on image.
+
+Form field: file (multipart)
+
+Response:
+
+{
+  "id": "1700439123123_abc123.jpg",
+  "image_url": "/history_static/1700439123123_abc123.jpg"
+}
+
+
+Full URL:
+
+https://virtual-tryon-backend-974u.onrender.com/history_static/<filename>
+
+GET /history?limit=20
+
+Retrieve most recent uploaded images.
+
+Example response:
+
+[
+  {
+    "id": "1700439123123_abc123.jpg",
+    "image_url": "/history_static/1700439123123_abc123.jpg",
+    "created_at": 1700439123.12
+  }
+]
+
+This is perfect for a “What others have tried before” feed.
+
+
 ☁️ Deployment (Render)
 Data persistence via disk
 

@@ -3,6 +3,7 @@ uvicorn[standard]
 
 pandas
 numpy
+uuid
 
 # For file uploads (UploadFile / multipart form data)
 python-multipart

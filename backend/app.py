@@ -13,6 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import uuid
+import time
+
 from llm_stylist import (
     TOPS,
     BOTTOMS,
@@ -32,6 +35,9 @@ DATA_ROOT = Path("/data")
 IMAGES_DIR = DATA_ROOT / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)  # 👈 ensure directory exists
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
+
+HISTORY_DIR = DATA_ROOT / "history"
+HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def ensure_images_dataset() -> None:
@@ -124,7 +130,7 @@ app.add_middleware(
 # /static/<id>.jpg -> /data/images/<id>.jpg
 # ------------------------------------------------------
 app.mount("/static", StaticFiles(directory=str(IMAGES_DIR)), name="static")
-
+app.mount("/history_static", StaticFiles(directory=str(HISTORY_DIR)), name="history_static")
 
 # ------------------------------------------------------
 # Helpers
@@ -369,3 +375,63 @@ async def suggest_from_photo(file: UploadFile = File(...)):
         "explanation": explanation,
         "looks": looks,
     }
+
+@app.post("/history/upload")
+async def upload_history_image(file: UploadFile = File(...)):
+    """
+    Save a user try-on image into /data/history.
+
+    Returns:
+      - id: internal filename
+      - image_url: path that frontend can display directly
+    """
+    # Read file bytes
+    contents = await file.read()
+
+    # Determine extension (default to .jpg)
+    orig_name = file.filename or ""
+    ext = Path(orig_name).suffix.lower()
+    if ext not in [".jpg", ".jpeg", ".png"]:
+        ext = ".jpg"
+
+    # Unique filename: <timestamp>_<uuid>.ext
+    fname = f"{int(time.time() * 1000)}_{uuid.uuid4().hex}{ext}"
+    dest = HISTORY_DIR / fname
+
+    with dest.open("wb") as f:
+        f.write(contents)
+
+    return {
+        "id": fname,
+        "image_url": f"/history_static/{fname}",
+    }
+
+
+@app.get("/history")
+def list_history(limit: int = 20):
+    """
+    List the most recent user try-on images.
+
+    Query params:
+      - limit: max number of images to return (default 20)
+
+    Returns:
+      [
+        { "id": "...", "image_url": "/history_static/...", "created_at": 1234567890.0 },
+        ...
+      ]
+    """
+    files = [p for p in HISTORY_DIR.glob("*") if p.is_file()]
+    # newest first
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    items = []
+    for p in files[:limit]:
+        stat = p.stat()
+        items.append({
+            "id": p.name,
+            "image_url": f"/history_static/{p.name}",
+            "created_at": stat.st_mtime,
+        })
+
+    return items
