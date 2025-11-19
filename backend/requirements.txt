@@ -6,6 +6,7 @@ numpy
 
 # For file uploads (UploadFile / multipart form data)
 python-multipart
+asyncio
 
 # For HTTP download of the dataset zip
 requests
@@ -13,3 +14,4 @@ requests
 # OpenAI + image handling (very likely already in your project)
 openai
 Pillow
+

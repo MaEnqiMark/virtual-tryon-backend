@@ -1,5 +1,5 @@
 # app.py
-
+import asyncio
 import os
 from pathlib import Path
 import zipfile
@@ -89,10 +89,6 @@ def ensure_images_dataset() -> None:
                 pass
 
 
-
-# Ensure dataset before mounting static files
-ensure_images_dataset()
-
 # ------------------------------------------------------
 # FastAPI app
 # ------------------------------------------------------
@@ -102,6 +98,13 @@ app = FastAPI(
     description="LLM + Vision + Catalog backend for CIS 5810 final project",
     version="1.0.0",
 )
+
+# Run dataset download in the background after the server starts
+@app.on_event("startup")
+async def startup_populate_images():
+    loop = asyncio.get_event_loop()
+    # run blocking download/extract in a thread so we don't block uvicorn
+    await loop.run_in_executor(None, ensure_images_dataset)
 
 # ------------------------------------------------------
 # CORS (so your teammate's frontend can call the API)
