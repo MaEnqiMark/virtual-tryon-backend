@@ -8,7 +8,6 @@ uuid
 # For file uploads (UploadFile / multipart form data)
 python-multipart
 asyncio
-time
 
 # For HTTP download of the dataset zip
 requests
