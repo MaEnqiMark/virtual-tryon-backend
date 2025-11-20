@@ -288,6 +288,8 @@ async def suggest_from_photo(file: UploadFile = File(...)):
          If bottom: use stylist to suggest tops.
     """
     image_bytes = await file.read()
+    print("content_type:", file.content_type)
+    print("file size:", len(image_bytes))
 
     # 1) Vision: infer structured metadata
     meta = extract_metadata_from_image(image_bytes)
