@@ -22,6 +22,7 @@ from llm_stylist import (
     BOTTOMS,
     JACKETS,
     SHOES,
+    JACKETS_CSV, SHOES_CSV,
     call_openai_stylist,
     call_openai_stylist_for_bottom,
     match_bottom,
@@ -50,10 +51,20 @@ JACKETS_SHOES_ZIP = DATA_ROOT / "jackets_shoes.zip"
 
 
 def ensure_jackets_shoes_dataset() -> None:
+
+    # ---- Case 1: Already downloaded on disk -> skip download & reload into memory ----
     if JACKETS_CSV.exists() and SHOES_CSV.exists():
-        print("[jackets/shoes] Found CSVs, skipping download.")
+        print("[jackets/shoes] Found jackets + shoes CSVs on disk.")
+        try:
+            import llm_stylist
+            llm_stylist.JACKETS = pd.read_csv(JACKETS_CSV)
+            llm_stylist.SHOES   = pd.read_csv(SHOES_CSV)
+            print("[jackets/shoes] Reloaded JACKETS + SHOES into memory")
+        except Exception as e:
+            print("[jackets/shoes] Reload failed:", e)
         return
 
+    # ---- Case 2: CSV missing -> must download ----
     url = os.environ.get("JACKETS_SHOES_URL")
     if not url:
         print("[jackets/shoes] JACKETS_SHOES_URL not set; skipping.")
@@ -72,8 +83,19 @@ def ensure_jackets_shoes_dataset() -> None:
             zip_ref.extractall(DATA_ROOT)
 
         print("[jackets/shoes] Extracted successfully.")
+
+        # Reload into memory after extraction
+        try:
+            import llm_stylist
+            llm_stylist.JACKETS = pd.read_csv(JACKETS_CSV)
+            llm_stylist.SHOES   = pd.read_csv(SHOES_CSV)
+            print("[jackets/shoes] Reloaded JACKETS + SHOES into memory after download")
+        except Exception as e:
+            print("[jackets/shoes] Reload failed after download:", e)
+
     except Exception as e:
         print(f"[jackets/shoes] Error: {e}")
+
     finally:
         if JACKETS_SHOES_ZIP.exists():
             JACKETS_SHOES_ZIP.unlink()
