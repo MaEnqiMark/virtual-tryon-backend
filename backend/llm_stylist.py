@@ -6,6 +6,7 @@ import random
 import base64
 import pandas as pd
 from openai import OpenAI
+from pathlib import Path
 
 # ============================================================
 # Models
@@ -20,8 +21,9 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 # 1. Load catalog
 # ============================================================
 
-CSV_PATH = "catalog/styles_subset.csv"
-IMAGES_DIR = "catalog/images"
+DATA_ROOT = Path("/data")
+CSV_PATH = DATA_ROOT / "styles_subset.csv"
+IMAGES_DIR = DATA_ROOT / "images"
 
 df = pd.read_csv(CSV_PATH)
 df["image_path"] = df["id"].apply(lambda x: f"{IMAGES_DIR}/{int(x)}.jpg")
@@ -34,8 +36,8 @@ print("[llm_stylist]   TOPS:", len(TOPS))
 print("[llm_stylist]   BOTTOMS:", len(BOTTOMS))
 
 # Jackets + Shoes support (for accessories driven by input item)
-JACKETS_CSV = "catalog/jackets.csv"
-SHOES_CSV   = "catalog/shoes.csv"
+JACKETS_CSV = DATA_ROOT / "jackets.csv"
+SHOES_CSV   = DATA_ROOT / "shoes.csv"
 
 try:
     JACKETS = pd.read_csv(JACKETS_CSV)
