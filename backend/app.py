@@ -161,31 +161,37 @@ def _row_to_item(row, kind: str):
         "image_url": f"/static/{int(row.id)}.jpg",
     }
 
-def _append_jackets_shoes(looks_list: list, constraint: dict):
-    """Append 2 jackets + 2 shoes to SAME flat list."""
+def _append_jackets_shoes(looks_list: list, constraint: dict, target_key: str):
+    """
+    Append 2 jackets + 2 shoes as neutral extra options, using the SAME key
+    ('bottom' or 'top') that the frontend already expects.
+    """
+
+    assert target_key in ("top", "bottom")
+
+    # neutral naming: "Option 4", "Option 5", ...
+    def _next_name():
+        # 1-based index
+        return f"Option {len(looks_list) + 1}"
 
     # 2 jackets
-    for i in range(2):
+    for _ in range(2):
         j = match_jacket(constraint)
         if j is not None:
             looks_list.append({
-                "name": f"Jacket {i+1}",
+                "name": _next_name(),
                 "constraint": constraint,
-                "bottom": None,
-                "top": None,
-                **{"item": _row_to_item(j, "jacket")}
+                target_key: _row_to_item(j, "jacket"),
             })
 
     # 2 shoes
-    for i in range(2):
+    for _ in range(2):
         s = match_shoes(constraint)
         if s is not None:
             looks_list.append({
-                "name": f"Shoe {i+1}",
+                "name": _next_name(),
                 "constraint": constraint,
-                "bottom": None,
-                "top": None,
-                **{"item": _row_to_item(s, "shoes")}
+                target_key: _row_to_item(s, "shoes"),
             })
 
 
@@ -240,17 +246,17 @@ def generate_looks_from_top(req: GenerateLooksFromTopRequest):
         looks.append({
             "name": outfit["name"],
             "constraint": constraint,
-            "bottom": _row_to_item(matched, "bottom")
+            "bottom": _row_to_item(matched, "bottom"),
         })
 
-    # Add jackets + shoes using the input top metadata as constraint
+    # Add 2 jackets + 2 shoes, rendered as extra "bottom" options
     constraint_input = {
         "articleType": top_row.articleType,
         "baseColour": top_row.baseColour,
         "season": top_row.season,
         "usage": top_row.usage,
     }
-    _append_jackets_shoes(looks, constraint_input)
+    _append_jackets_shoes(looks, constraint_input, target_key="bottom")
 
     return {
         "top": _row_to_item(top_row, "top"),
@@ -266,9 +272,11 @@ def generate_looks_from_bottom(req: GenerateLooksFromBottomRequest):
         raise HTTPException(404, f"Bottom id {req.bottom_id} not found")
     bottom_row = rows.iloc[0]
 
-    style_plan = call_openai_stylist_for_bottom(bottom_row,
-                                               occasion=req.occasion,
-                                               vibe=req.vibe)
+    style_plan = call_openai_stylist_for_bottom(
+        bottom_row,
+        occasion=req.occasion,
+        vibe=req.vibe,
+    )
 
     looks = []
     for outfit in style_plan["outfits"]:
@@ -277,16 +285,17 @@ def generate_looks_from_bottom(req: GenerateLooksFromBottomRequest):
         looks.append({
             "name": outfit["name"],
             "constraint": constraint,
-            "top": _row_to_item(matched, "top")
+            "top": _row_to_item(matched, "top"),
         })
 
+    # Add 2 jackets + 2 shoes, rendered as extra "top" options
     constraint_input = {
         "articleType": bottom_row.articleType,
         "baseColour": bottom_row.baseColour,
         "season": bottom_row.season,
         "usage": bottom_row.usage,
     }
-    _append_jackets_shoes(looks, constraint_input)
+    _append_jackets_shoes(looks, constraint_input, target_key="top")
 
     return {
         "bottom": _row_to_item(bottom_row, "bottom"),
@@ -311,7 +320,6 @@ async def suggest_from_photo(file: UploadFile = File(...)):
 
     looks = []
     explanation = ""
-    constraint_input = meta  # direct
 
     if garment_kind == "top":
         style_plan = call_openai_stylist(fake_row)
@@ -323,8 +331,11 @@ async def suggest_from_photo(file: UploadFile = File(...)):
             looks.append({
                 "name": outfit["name"],
                 "constraint": constraint,
-                "bottom": _row_to_item(matched, "bottom")
+                "bottom": _row_to_item(matched, "bottom"),
             })
+
+        # add jackets + shoes as extra "bottom" options
+        _append_jackets_shoes(looks, meta, target_key="bottom")
 
     elif garment_kind == "bottom":
         style_plan = call_openai_stylist_for_bottom(fake_row)
@@ -336,20 +347,27 @@ async def suggest_from_photo(file: UploadFile = File(...)):
             looks.append({
                 "name": outfit["name"],
                 "constraint": constraint,
-                "top": _row_to_item(matched, "top")
+                "top": _row_to_item(matched, "top"),
             })
+
+        # add jackets + shoes as extra "top" options
+        _append_jackets_shoes(looks, meta, target_key="top")
 
     else:
         raise HTTPException(400, f"Unclear garment_kind: {garment_kind}")
-
-    # Append jackets + shoes after main suggestions
-    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "input_metadata": meta,
         "inferred_occasion": meta.get("usage", "Casual"),
         "inferred_vibe": meta.get("styleVibe", "minimal"),
-        "normalized_item": constraint_input,
+        "normalized_item": {
+            "articleType": fake_row["articleType"],
+            "baseColour": fake_row["baseColour"],
+            "season": fake_row["season"],
+            "usage": fake_row["usage"],
+            "styleVibe": meta.get("styleVibe"),
+            "kind": garment_kind,
+        },
         "explanation": explanation,
         "looks": looks,
     }
