@@ -194,7 +194,7 @@ def _append_jackets_shoes(looks_list: list, constraint: dict):
             looks_list.append({
                 "name": f"Jacket {i+1}",
                 "constraint": constraint,
-                "top": _row_to_item(j, "jacket"),
+                "item": _row_to_item(j, "jacket"),
             })
 
     # 2 shoes
@@ -210,7 +210,7 @@ def _append_jackets_shoes(looks_list: list, constraint: dict):
             looks_list.append({
                 "name": f"Shoe {i+1}",
                 "constraint": constraint,
-                "bottom": _row_to_item(s, "shoes"),
+                "item": _row_to_item(s, "shoes"),
             })
 
 
