@@ -181,37 +181,43 @@ def _row_to_item(row, kind: str):
 def _append_jackets_shoes(looks_list: list, constraint: dict):
     print("[DEBUG] MATCHING JACKETS/SHOES...")
 
+    used_ids = set(item.get("id")
+                   for look in looks_list
+                   for item in [look.get("bottom"), look.get("top")]
+                   if item)
+
     # 2 jackets
     for i in range(2):
-        try:
-            j = match_jacket(constraint)
-            if j is None and not llm_stylist.JACKETS.empty:
-                j = llm_stylist.JACKETS.sample(n=1).iloc[0]
-        except:
-            j = None
+        j = match_jacket(constraint)
+        if j is None or int(j.id) in used_ids:
+            candidates = llm_stylist.JACKETS[~llm_stylist.JACKETS['id'].isin(used_ids)]
+            if candidates.empty:
+                continue
+            j = candidates.sample(n=1).iloc[0]
+        used_ids.add(int(j.id))
 
-        if j is not None:
-            looks_list.append({
-                "name": f"Jacket {i+1}",
-                "constraint": constraint,
-                "item": _row_to_item(j, "jacket"),
-            })
+        looks_list.append({
+            "name": f"Jacket {i+1}",
+            "constraint": constraint,
+            "item": _row_to_item(j, "jacket"),
+        })
 
     # 2 shoes
     for i in range(2):
-        try:
-            s = match_shoes(constraint)
-            if s is None and not llm_stylist.SHOES.empty:
-                s = llm_stylist.SHOES.sample(n=1).iloc[0]
-        except:
-            s = None
+        s = match_shoes(constraint)
+        if s is None or int(s.id) in used_ids:
+            candidates = llm_stylist.SHOES[~llm_stylist.SHOES['id'].isin(used_ids)]
+            if candidates.empty:
+                continue
+            s = candidates.sample(n=1).iloc[0]
+        used_ids.add(int(s.id))
 
-        if s is not None:
-            looks_list.append({
-                "name": f"Shoe {i+1}",
-                "constraint": constraint,
-                "item": _row_to_item(s, "shoes"),
-            })
+        looks_list.append({
+            "name": f"Shoe {i+1}",
+            "constraint": constraint,
+            "item": _row_to_item(s, "shoes"),
+        })
+
 
 
 
