@@ -447,3 +447,21 @@ def list_history(limit: int = 20):
         }
         for p in files
     ]
+
+@app.get("/debug/ls")
+def debug_ls(path: str = "/data"):
+    p = Path(path)
+    if not p.exists():
+        return {"error": f"Path not found: {path}"}
+    files = []
+    for x in p.iterdir():
+        files.append({
+            "name": x.name,
+            "is_dir": x.is_dir(),
+            "size": x.stat().st_size if x.is_file() else None
+        })
+    return {
+        "path": str(p),
+        "files": files
+    }
+
