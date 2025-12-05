@@ -36,7 +36,7 @@ import llm_stylist
 # Filesystem Setup
 # =======================================================
 
-DATA_ROOT = Path("/data")
+DATA_ROOT = Path("/catalog")
 IMAGES_DIR = DATA_ROOT / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
@@ -194,7 +194,7 @@ def _append_jackets_shoes(looks_list: list, constraint: dict):
             looks_list.append({
                 "name": f"Jacket {i+1}",
                 "constraint": constraint,
-                "item": _row_to_item(j, "jacket"),
+                "top": _row_to_item(j, "jacket"),
             })
 
     # 2 shoes
@@ -210,7 +210,7 @@ def _append_jackets_shoes(looks_list: list, constraint: dict):
             looks_list.append({
                 "name": f"Shoe {i+1}",
                 "constraint": constraint,
-                "item": _row_to_item(s, "shoes"),
+                "bottom": _row_to_item(s, "shoes"),
             })
 
 
