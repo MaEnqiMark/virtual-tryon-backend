@@ -36,7 +36,7 @@ import llm_stylist
 # Filesystem Setup
 # =======================================================
 
-DATA_ROOT = Path("/catalog")
+DATA_ROOT = Path("/data")
 IMAGES_DIR = DATA_ROOT / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
