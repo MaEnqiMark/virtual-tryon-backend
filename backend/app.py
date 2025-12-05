@@ -20,9 +20,6 @@ import time
 from llm_stylist import (
     TOPS,
     BOTTOMS,
-    JACKETS,
-    SHOES,
-    JACKETS_CSV, SHOES_CSV,
     call_openai_stylist,
     call_openai_stylist_for_bottom,
     match_bottom,
@@ -31,6 +28,8 @@ from llm_stylist import (
     match_shoes,
     extract_metadata_from_image,
 )
+
+import llm_stylist
 
 
 # =======================================================
@@ -45,20 +44,17 @@ ZIP_PATH = DATA_ROOT / "catalog_images.zip"
 HISTORY_DIR = DATA_ROOT / "history"
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-JACKETS_CSV = DATA_ROOT / "jackets.csv"
-SHOES_CSV   = DATA_ROOT / "shoes.csv"
 JACKETS_SHOES_ZIP = DATA_ROOT / "jackets_shoes.zip"
 
 
 def ensure_jackets_shoes_dataset() -> None:
 
     # ---- Case 1: Already downloaded on disk -> skip download & reload into memory ----
-    if JACKETS_CSV.exists() and SHOES_CSV.exists():
+    if llm_stylist.JACKETS_CSV.exists() and llm_stylist.SHOES_CSV.exists():
         print("[jackets/shoes] Found jackets + shoes CSVs on disk.")
         try:
-            import llm_stylist
-            llm_stylist.JACKETS = pd.read_csv(JACKETS_CSV)
-            llm_stylist.SHOES   = pd.read_csv(SHOES_CSV)
+            llm_stylist.JACKETS = pd.read_csv(llm_stylist.JACKETS_CSV)
+            llm_stylist.SHOES   = pd.read_csv(llm_stylist.SHOES_CSV)
             print("[jackets/shoes] Reloaded JACKETS + SHOES into memory")
         except Exception as e:
             print("[jackets/shoes] Reload failed:", e)
@@ -86,9 +82,8 @@ def ensure_jackets_shoes_dataset() -> None:
 
         # Reload into memory after extraction
         try:
-            import llm_stylist
-            llm_stylist.JACKETS = pd.read_csv(JACKETS_CSV)
-            llm_stylist.SHOES   = pd.read_csv(SHOES_CSV)
+            llm_stylist.JACKETS = pd.read_csv(llm_stylist.JACKETS_CSV)
+            llm_stylist.SHOES   = pd.read_csv(llm_stylist.SHOES_CSV)
             print("[jackets/shoes] Reloaded JACKETS + SHOES into memory after download")
         except Exception as e:
             print("[jackets/shoes] Reload failed after download:", e)
@@ -184,34 +179,37 @@ def _row_to_item(row, kind: str):
     }
 
 def _append_jackets_shoes(looks_list: list, constraint: dict):
-    print("[DEBUG] MATCHING JACKETS...")
+    print("[DEBUG] MATCHING JACKETS/SHOES...")
+
     # 2 jackets
     for i in range(2):
         try:
-            j = match_jacket(constraint) or (JACKETS.sample(n=1).iloc[0] if not JACKETS.empty else None)
+            j = match_jacket(constraint)
+            if j is None and not llm_stylist.JACKETS.empty:
+                j = llm_stylist.JACKETS.sample(n=1).iloc[0]
         except:
             j = None
+
         if j is not None:
             looks_list.append({
                 "name": f"Jacket {i+1}",
                 "constraint": constraint,
-                "bottom": None,
-                "top": None,
                 "item": _row_to_item(j, "jacket"),
             })
 
     # 2 shoes
     for i in range(2):
         try:
-            s = match_shoes(constraint) or (SHOES.sample(n=1).iloc[0] if not SHOES.empty else None)
+            s = match_shoes(constraint)
+            if s is None and not llm_stylist.SHOES.empty:
+                s = llm_stylist.SHOES.sample(n=1).iloc[0]
         except:
             s = None
+
         if s is not None:
             looks_list.append({
                 "name": f"Shoe {i+1}",
                 "constraint": constraint,
-                "bottom": None,
-                "top": None,
                 "item": _row_to_item(s, "shoes"),
             })
 
@@ -255,7 +253,7 @@ def list_bottoms():
 @app.post("/generate_looks_from_top")
 def generate_looks_from_top(req: GenerateLooksFromTopRequest):
     print("\n=== /generate_looks_from_top CALLED ===")
-    print(f"[DEBUG] JACKETS rows: {len(JACKETS)}, SHOES rows: {len(SHOES)}")
+    print(f"[DEBUG] JACKETS rows: {len(llm_stylist.JACKETS)}, SHOES rows: {len(llm_stylist.SHOES)}")
     print(f"Requested top_id: {req.top_id}")
 
     rows = TOPS[TOPS["id"] == req.top_id]
