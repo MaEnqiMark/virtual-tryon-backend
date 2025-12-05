@@ -161,38 +161,37 @@ def _row_to_item(row, kind: str):
         "image_url": f"/static/{int(row.id)}.jpg",
     }
 
-def _append_jackets_shoes(looks_list: list, constraint: dict, target_key: str):
-    """
-    Append 2 jackets + 2 shoes as neutral extra options, using the SAME key
-    ('bottom' or 'top') that the frontend already expects.
-    """
-
-    assert target_key in ("top", "bottom")
-
-    # neutral naming: "Option 4", "Option 5", ...
-    def _next_name():
-        # 1-based index
-        return f"Option {len(looks_list) + 1}"
-
+def _append_jackets_shoes(looks_list: list, constraint: dict):
     # 2 jackets
-    for _ in range(2):
-        j = match_jacket(constraint)
+    for i in range(2):
+        try:
+            j = match_jacket(constraint) or (JACKETS.sample(n=1).iloc[0] if not JACKETS.empty else None)
+        except:
+            j = None
         if j is not None:
             looks_list.append({
-                "name": _next_name(),
+                "name": f"Jacket {i+1}",
                 "constraint": constraint,
-                target_key: _row_to_item(j, "jacket"),
+                "bottom": None,
+                "top": None,
+                "item": _row_to_item(j, "jacket"),
             })
 
     # 2 shoes
-    for _ in range(2):
-        s = match_shoes(constraint)
+    for i in range(2):
+        try:
+            s = match_shoes(constraint) or (SHOES.sample(n=1).iloc[0] if not SHOES.empty else None)
+        except:
+            s = None
         if s is not None:
             looks_list.append({
-                "name": _next_name(),
+                "name": f"Shoe {i+1}",
                 "constraint": constraint,
-                target_key: _row_to_item(s, "shoes"),
+                "bottom": None,
+                "top": None,
+                "item": _row_to_item(s, "shoes"),
             })
+
 
 
 # =======================================================
