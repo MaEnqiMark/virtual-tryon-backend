@@ -253,17 +253,28 @@ def list_bottoms():
 
 @app.post("/generate_looks_from_top")
 def generate_looks_from_top(req: GenerateLooksFromTopRequest):
+    print("\n=== /generate_looks_from_top CALLED ===")
+    print(f"Requested top_id: {req.top_id}")
+
     rows = TOPS[TOPS["id"] == req.top_id]
     if rows.empty:
+        print("❌ Top not found!")
         raise HTTPException(404, f"Top id {req.top_id} not found")
+
     top_row = rows.iloc[0]
+    print(f"Found TOP: id={top_row.id} articleType={top_row.articleType} baseColour={top_row.baseColour}")
 
     style_plan = call_openai_stylist(top_row, occasion=req.occasion, vibe=req.vibe)
+    print("LLM stylist returned outfits:", len(style_plan.get("outfits", [])))
 
     looks = []
     for outfit in style_plan["outfits"]:
         constraint = outfit["bottom_constraint"]
+        print(f"Matching bottom for constraint: {constraint}")
+
         matched = match_bottom(constraint)
+        print(f"→ Matched bottom_id: {matched.id}")
+
         looks.append({
             "name": outfit["name"],
             "constraint": constraint,
@@ -277,13 +288,19 @@ def generate_looks_from_top(req: GenerateLooksFromTopRequest):
         "season": top_row.season,
         "usage": top_row.usage,
     }
+
+    print(">>> BEFORE append jackets/shoes: len(looks) =", len(looks))
     _append_jackets_shoes(looks, constraint_input)
+    print(">>> AFTER append jackets/shoes: len(looks) =", len(looks))
+
+    print("=== END /generate_looks_from_top ===\n")
 
     return {
         "top": _row_to_item(top_row, "top"),
         "explanation": style_plan.get("explanation", ""),
         "looks": looks,
     }
+
 
 
 @app.post("/generate_looks_from_bottom")
