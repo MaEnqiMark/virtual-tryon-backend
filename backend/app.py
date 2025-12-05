@@ -184,6 +184,7 @@ def _row_to_item(row, kind: str):
     }
 
 def _append_jackets_shoes(looks_list: list, constraint: dict):
+    print("[DEBUG] MATCHING JACKETS...")
     # 2 jackets
     for i in range(2):
         try:
@@ -254,6 +255,7 @@ def list_bottoms():
 @app.post("/generate_looks_from_top")
 def generate_looks_from_top(req: GenerateLooksFromTopRequest):
     print("\n=== /generate_looks_from_top CALLED ===")
+    print(f"[DEBUG] JACKETS rows: {len(JACKETS)}, SHOES rows: {len(SHOES)}")
     print(f"Requested top_id: {req.top_id}")
 
     rows = TOPS[TOPS["id"] == req.top_id]
