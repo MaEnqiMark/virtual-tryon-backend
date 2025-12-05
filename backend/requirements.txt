@@ -3,16 +3,11 @@ uvicorn[standard]
 
 pandas
 numpy
-uuid
 
-# For file uploads (UploadFile / multipart form data)
-python-multipart
-asyncio
+python-multipart   # file uploads
+requests           # dataset zip download
 
-# For HTTP download of the dataset zip
-requests
+openai             # stylist + vision
+Pillow             # image reading/resize
 
-# OpenAI + image handling (very likely already in your project)
-openai
-Pillow
-
+aiofiles           # async file serving for StaticFiles

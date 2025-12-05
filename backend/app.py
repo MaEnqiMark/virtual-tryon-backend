@@ -1,4 +1,5 @@
 # app.py
+
 import asyncio
 import os
 from pathlib import Path
@@ -19,53 +20,78 @@ import time
 from llm_stylist import (
     TOPS,
     BOTTOMS,
+    JACKETS,
+    SHOES,
     call_openai_stylist,
     call_openai_stylist_for_bottom,
     match_bottom,
     match_top,
+    match_jacket,
+    match_shoes,
     extract_metadata_from_image,
 )
 
-# ------------------------------------------------------
-# Data / images: ensure Kaggle dataset exists in /data
-# ------------------------------------------------------
+
+# =======================================================
+# Filesystem Setup
+# =======================================================
 
 DATA_ROOT = Path("/data")
-# After extracting the Kaggle dataset, we expect images at /data/images/<id>.jpg
 IMAGES_DIR = DATA_ROOT / "images"
-IMAGES_DIR.mkdir(parents=True, exist_ok=True)  # 👈 ensure directory exists
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 ZIP_PATH = DATA_ROOT / "catalog_images.zip"
 
 HISTORY_DIR = DATA_ROOT / "history"
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
+JACKETS_CSV = DATA_ROOT / "jackets.csv"
+SHOES_CSV   = DATA_ROOT / "shoes.csv"
+JACKETS_SHOES_ZIP = DATA_ROOT / "jackets_shoes.zip"
+
+
+def ensure_jackets_shoes_dataset() -> None:
+    if JACKETS_CSV.exists() and SHOES_CSV.exists():
+        print("[jackets/shoes] Found CSVs, skipping download.")
+        return
+
+    url = os.environ.get("JACKETS_SHOES_URL")
+    if not url:
+        print("[jackets/shoes] JACKETS_SHOES_URL not set; skipping.")
+        return
+
+    print(f"[jackets/shoes] Downloading from {url}")
+    try:
+        with requests.get(url, stream=True, timeout=600) as r:
+            r.raise_for_status()
+            with JACKETS_SHOES_ZIP.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+        with zipfile.ZipFile(JACKETS_SHOES_ZIP, "r") as zip_ref:
+            zip_ref.extractall(DATA_ROOT)
+
+        print("[jackets/shoes] Extracted successfully.")
+    except Exception as e:
+        print(f"[jackets/shoes] Error: {e}")
+    finally:
+        if JACKETS_SHOES_ZIP.exists():
+            JACKETS_SHOES_ZIP.unlink()
+
 
 def ensure_images_dataset() -> None:
-    """
-    Make sure /data/images exists and contains images.
-
-    If there are already .jpg files there (persistent disk case),
-    do nothing. Otherwise, download a zip from DATASET_URL (HuggingFace, etc.)
-    and extract it into /data so we get /data/images/<id>.jpg.
-    """
-    # If images already exist, we're done (disk is warm).
     if IMAGES_DIR.exists():
         jpgs = list(IMAGES_DIR.glob("*.jpg"))
         if jpgs:
-            print(f"[dataset] Found {len(jpgs)} images in {IMAGES_DIR}, skipping download.")
+            print(f"[dataset] Found {len(jpgs)} images, skipping download.")
             return
 
     url = os.environ.get("DATASET_URL")
     if not url:
-        print(
-            "[dataset] No images in /data/images and DATASET_URL is not set. "
-            "Service will run, but /static/<id>.jpg will 404 until you upload images."
-        )
+        print("[dataset] DATASET_URL not set — catalog images missing.")
         return
 
-    print(f"[dataset] No images found, downloading dataset from {url}")
-    DATA_ROOT.mkdir(parents=True, exist_ok=True)
-
+    print(f"[dataset] Downloading from {url}")
     try:
         with requests.get(url, stream=True, timeout=600) as r:
             r.raise_for_status()
@@ -73,76 +99,58 @@ def ensure_images_dataset() -> None:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-        print(f"[dataset] Downloaded zip to {ZIP_PATH}, extracting...")
 
-        # IMPORTANT: this assumes the zip has an `images/` folder at its root,
-        # so after extraction you get /data/images/<id>.jpg
         with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
             zip_ref.extractall(DATA_ROOT)
 
-        print(f"[dataset] Extracted dataset to {DATA_ROOT}")
+        print("[dataset] Extracted successfully.")
     except Exception as e:
-        print(f"[dataset] WARNING: Failed to download or extract dataset: {e}")
-        print(
-            "[dataset] Service will still run, but /static/<id>.jpg "
-            "will 404 until images exist under /data/images."
-        )
+        print(f"[dataset] Error downloading: {e}")
     finally:
         if ZIP_PATH.exists():
-            try:
-                ZIP_PATH.unlink()
-                print(f"[dataset] Deleted zip {ZIP_PATH}")
-            except OSError:
-                pass
+            ZIP_PATH.unlink()
 
 
-# ------------------------------------------------------
-# FastAPI app
-# ------------------------------------------------------
+# =======================================================
+# FastAPI
+# =======================================================
 
 app = FastAPI(
     title="Virtual Try-On Stylist API",
-    description="LLM + Vision + Catalog backend for CIS 5810 final project",
-    version="1.0.0",
+    version="2.0.0",
 )
 
-# Run dataset download in the background after the server starts
 @app.on_event("startup")
-async def startup_populate_images():
-    # Fire-and-forget background task; do NOT await
+async def startup_tasks():
     loop = asyncio.get_event_loop()
     loop.create_task(asyncio.to_thread(ensure_images_dataset))
-    print("[startup] Scheduled background dataset check/download.")
+    loop.create_task(asyncio.to_thread(ensure_jackets_shoes_dataset))
+    print("[startup] checks scheduled.")
 
-# ------------------------------------------------------
-# CORS (so your teammate's frontend can call the API)
-# ------------------------------------------------------
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later if needed
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ------------------------------------------------------
-# Static files: serve catalog images
-# /static/<id>.jpg -> /data/images/<id>.jpg
-# ------------------------------------------------------
+
+# Static routes
 app.mount("/static", StaticFiles(directory=str(IMAGES_DIR)), name="static")
 app.mount("/history_static", StaticFiles(directory=str(HISTORY_DIR)), name="history_static")
 
-# ------------------------------------------------------
+
+# =======================================================
 # Helpers
-# ------------------------------------------------------
+# =======================================================
 
 def _safe(v):
-    """Convert NaN/NA to None so JSON encoding doesn't die."""
     return None if pd.isna(v) else v
 
-
 def _row_to_item(row, kind: str):
-    """Convert a pandas row (top or bottom) to a JSON-friendly dict."""
     return {
         "kind": kind,
         "id": int(row.id),
@@ -153,10 +161,37 @@ def _row_to_item(row, kind: str):
         "image_url": f"/static/{int(row.id)}.jpg",
     }
 
+def _append_jackets_shoes(looks_list: list, constraint: dict):
+    """Append 2 jackets + 2 shoes to SAME flat list."""
 
-# ------------------------------------------------------
-# Pydantic request models
-# ------------------------------------------------------
+    # 2 jackets
+    for i in range(2):
+        j = match_jacket(constraint)
+        if j is not None:
+            looks_list.append({
+                "name": f"Jacket {i+1}",
+                "constraint": constraint,
+                "bottom": None,
+                "top": None,
+                **{"item": _row_to_item(j, "jacket")}
+            })
+
+    # 2 shoes
+    for i in range(2):
+        s = match_shoes(constraint)
+        if s is not None:
+            looks_list.append({
+                "name": f"Shoe {i+1}",
+                "constraint": constraint,
+                "bottom": None,
+                "top": None,
+                **{"item": _row_to_item(s, "shoes")}
+            })
+
+
+# =======================================================
+# Schemas
+# =======================================================
 
 class GenerateLooksFromTopRequest(BaseModel):
     top_id: int
@@ -170,9 +205,9 @@ class GenerateLooksFromBottomRequest(BaseModel):
     vibe: Optional[str] = "minimal"
 
 
-# ------------------------------------------------------
-# Basic endpoints
-# ------------------------------------------------------
+# =======================================================
+# Endpoints
+# =======================================================
 
 @app.get("/health")
 def health_check():
@@ -181,48 +216,41 @@ def health_check():
 
 @app.get("/tops")
 def list_tops():
-    """Return all tops in the catalog with basic metadata."""
     return [_row_to_item(row, "top") for _, row in TOPS.iterrows()]
 
 
 @app.get("/bottoms")
 def list_bottoms():
-    """Return all bottoms in the catalog with basic metadata."""
     return [_row_to_item(row, "bottom") for _, row in BOTTOMS.iterrows()]
 
 
-# ------------------------------------------------------
-# Top -> Bottoms
-# ------------------------------------------------------
-
 @app.post("/generate_looks_from_top")
 def generate_looks_from_top(req: GenerateLooksFromTopRequest):
-    """
-    Given a TOP id, use the stylist LLM to generate bottom constraints,
-    match them to actual bottoms in the catalog, and return outfits.
-    """
-    top_rows = TOPS[TOPS["id"] == req.top_id]
-    if top_rows.empty:
-        raise HTTPException(status_code=404, detail=f"Top id {req.top_id} not found")
+    rows = TOPS[TOPS["id"] == req.top_id]
+    if rows.empty:
+        raise HTTPException(404, f"Top id {req.top_id} not found")
+    top_row = rows.iloc[0]
 
-    top_row = top_rows.iloc[0]
-
-    style_plan = call_openai_stylist(
-        top_row,
-        num_outfits=3,
-        occasion=req.occasion,
-        vibe=req.vibe,
-    )
+    style_plan = call_openai_stylist(top_row, occasion=req.occasion, vibe=req.vibe)
 
     looks = []
     for outfit in style_plan["outfits"]:
         constraint = outfit["bottom_constraint"]
-        bottom_row = match_bottom(constraint, BOTTOMS)
+        matched = match_bottom(constraint)
         looks.append({
             "name": outfit["name"],
             "constraint": constraint,
-            "bottom": _row_to_item(bottom_row, "bottom"),
+            "bottom": _row_to_item(matched, "bottom")
         })
+
+    # Add jackets + shoes using the input top metadata as constraint
+    constraint_input = {
+        "articleType": top_row.articleType,
+        "baseColour": top_row.baseColour,
+        "season": top_row.season,
+        "usage": top_row.usage,
+    }
+    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "top": _row_to_item(top_row, "top"),
@@ -231,38 +259,34 @@ def generate_looks_from_top(req: GenerateLooksFromTopRequest):
     }
 
 
-# ------------------------------------------------------
-# Bottom -> Tops
-# ------------------------------------------------------
-
 @app.post("/generate_looks_from_bottom")
 def generate_looks_from_bottom(req: GenerateLooksFromBottomRequest):
-    """
-    Given a BOTTOM id, use the stylist LLM to generate top constraints,
-    match them to actual tops in the catalog, and return outfits.
-    """
-    bottom_rows = BOTTOMS[BOTTOMS["id"] == req.bottom_id]
-    if bottom_rows.empty:
-        raise HTTPException(status_code=404, detail=f"Bottom id {req.bottom_id} not found")
+    rows = BOTTOMS[BOTTOMS["id"] == req.bottom_id]
+    if rows.empty:
+        raise HTTPException(404, f"Bottom id {req.bottom_id} not found")
+    bottom_row = rows.iloc[0]
 
-    bottom_row = bottom_rows.iloc[0]
-
-    style_plan = call_openai_stylist_for_bottom(
-        bottom_row,
-        num_outfits=3,
-        occasion=req.occasion,
-        vibe=req.vibe,
-    )
+    style_plan = call_openai_stylist_for_bottom(bottom_row,
+                                               occasion=req.occasion,
+                                               vibe=req.vibe)
 
     looks = []
     for outfit in style_plan["outfits"]:
         constraint = outfit["top_constraint"]
-        top_row = match_top(constraint, TOPS)
+        matched = match_top(constraint)
         looks.append({
             "name": outfit["name"],
             "constraint": constraint,
-            "top": _row_to_item(top_row, "top"),
+            "top": _row_to_item(matched, "top")
         })
+
+    constraint_input = {
+        "articleType": bottom_row.articleType,
+        "baseColour": bottom_row.baseColour,
+        "season": bottom_row.season,
+        "usage": bottom_row.usage,
+    }
+    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "bottom": _row_to_item(bottom_row, "bottom"),
@@ -271,38 +295,13 @@ def generate_looks_from_bottom(req: GenerateLooksFromBottomRequest):
     }
 
 
-# ------------------------------------------------------
-# Upload photo -> auto-detect (top / bottom) -> suggestions
-# ------------------------------------------------------
-
 @app.post("/suggest_from_photo")
 async def suggest_from_photo(file: UploadFile = File(...)):
-    """
-    User uploads a photo of a single clothing item (top or bottom).
-
-    We:
-      1. Use OpenAI vision to infer metadata (garment_kind, articleType, baseColour,
-         season, usage, styleVibe).
-      2. Infer occasion and vibe from that metadata.
-      3. If top: use stylist to suggest bottoms.
-         If bottom: use stylist to suggest tops.
-    """
     image_bytes = await file.read()
-    print("content_type:", file.content_type)
-    print("file size:", len(image_bytes))
 
-    # 1) Vision: infer structured metadata
     meta = extract_metadata_from_image(image_bytes)
     garment_kind = meta.get("garment_kind")
 
-    if garment_kind not in ("top", "bottom"):
-        raise HTTPException(status_code=400, detail=f"Unclear garment_kind: {garment_kind}")
-
-    # 2) Infer occasion + vibe from metadata
-    occasion = meta.get("usage", "Casual")
-    vibe = meta.get("styleVibe", "minimal")
-
-    # 3) Build a fake row with the fields the stylist expects
     fake_row = pd.Series({
         "articleType": meta.get("articleType", ""),
         "baseColour": meta.get("baseColour", ""),
@@ -312,128 +311,83 @@ async def suggest_from_photo(file: UploadFile = File(...)):
 
     looks = []
     explanation = ""
+    constraint_input = meta  # direct
 
     if garment_kind == "top":
-        # TOP -> suggest BOTTOMS
-        style_plan = call_openai_stylist(
-            fake_row,
-            num_outfits=3,
-            occasion=occasion,
-            vibe=vibe,
-        )
+        style_plan = call_openai_stylist(fake_row)
         explanation = style_plan.get("explanation", "")
 
         for outfit in style_plan["outfits"]:
             constraint = outfit["bottom_constraint"]
-            bottom_row = match_bottom(constraint, BOTTOMS)
+            matched = match_bottom(constraint)
             looks.append({
                 "name": outfit["name"],
                 "constraint": constraint,
-                "bottom": _row_to_item(bottom_row, "bottom"),
+                "bottom": _row_to_item(matched, "bottom")
             })
 
-        input_item = {
-            "kind": "top",
-            "articleType": fake_row["articleType"],
-            "baseColour": fake_row["baseColour"],
-            "season": fake_row["season"],
-            "usage": fake_row["usage"],
-            "styleVibe": meta.get("styleVibe"),
-        }
-
-    else:
-        # BOTTOM -> suggest TOPS
-        style_plan = call_openai_stylist_for_bottom(
-            fake_row,
-            num_outfits=3,
-            occasion=occasion,
-            vibe=vibe,
-        )
+    elif garment_kind == "bottom":
+        style_plan = call_openai_stylist_for_bottom(fake_row)
         explanation = style_plan.get("explanation", "")
 
         for outfit in style_plan["outfits"]:
             constraint = outfit["top_constraint"]
-            top_row = match_top(constraint, TOPS)
+            matched = match_top(constraint)
             looks.append({
                 "name": outfit["name"],
                 "constraint": constraint,
-                "top": _row_to_item(top_row, "top"),
+                "top": _row_to_item(matched, "top")
             })
 
-        input_item = {
-            "kind": "bottom",
-            "articleType": fake_row["articleType"],
-            "baseColour": fake_row["baseColour"],
-            "season": fake_row["season"],
-            "usage": fake_row["usage"],
-            "styleVibe": meta.get("styleVibe"),
-        }
+    else:
+        raise HTTPException(400, f"Unclear garment_kind: {garment_kind}")
+
+    # Append jackets + shoes after main suggestions
+    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "input_metadata": meta,
-        "inferred_occasion": occasion,
-        "inferred_vibe": vibe,
-        "normalized_item": input_item,
+        "inferred_occasion": meta.get("usage", "Casual"),
+        "inferred_vibe": meta.get("styleVibe", "minimal"),
+        "normalized_item": constraint_input,
         "explanation": explanation,
         "looks": looks,
     }
 
+
+# =======================================================
+# History
+# =======================================================
+
 @app.post("/history/upload")
 async def upload_history_image(file: UploadFile = File(...)):
-    """
-    Save a user try-on image into /data/history.
-
-    Returns:
-      - id: internal filename
-      - image_url: path that frontend can display directly
-    """
-    # Read file bytes
     contents = await file.read()
 
-    # Determine extension (default to .jpg)
-    orig_name = file.filename or ""
-    ext = Path(orig_name).suffix.lower()
+    ext = Path(file.filename or "").suffix.lower()
     if ext not in [".jpg", ".jpeg", ".png"]:
         ext = ".jpg"
 
-    # Unique filename: <timestamp>_<uuid>.ext
     fname = f"{int(time.time() * 1000)}_{uuid.uuid4().hex}{ext}"
     dest = HISTORY_DIR / fname
-
     with dest.open("wb") as f:
         f.write(contents)
 
-    return {
-        "id": fname,
-        "image_url": f"/history_static/{fname}",
-    }
+    return {"id": fname, "image_url": f"/history_static/{fname}"}
 
 
 @app.get("/history")
 def list_history(limit: int = 20):
-    """
-    List the most recent user try-on images.
+    files = sorted(
+        [p for p in HISTORY_DIR.glob("*") if p.is_file()],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )[:limit]
 
-    Query params:
-      - limit: max number of images to return (default 20)
-
-    Returns:
-      [
-        { "id": "...", "image_url": "/history_static/...", "created_at": 1234567890.0 },
-        ...
-      ]
-    """
-    files = [p for p in HISTORY_DIR.glob("*") if p.is_file()]
-    # newest first
-    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-    items = []
-    for p in files[:limit]:
-        stat = p.stat()
-        items.append({
+    return [
+        {
             "id": p.name,
             "image_url": f"/history_static/{p.name}",
-            "created_at": stat.st_mtime,
-        })
-
-    return items
+            "created_at": p.stat().st_mtime,
+        }
+        for p in files
+    ]
