@@ -277,7 +277,7 @@ def generate_looks_from_top(req: GenerateLooksFromTopRequest):
         "season": top_row.season,
         "usage": top_row.usage,
     }
-    _append_jackets_shoes(looks, constraint_input, target_key="bottom")
+    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "top": _row_to_item(top_row, "top"),
@@ -316,7 +316,7 @@ def generate_looks_from_bottom(req: GenerateLooksFromBottomRequest):
         "season": bottom_row.season,
         "usage": bottom_row.usage,
     }
-    _append_jackets_shoes(looks, constraint_input, target_key="top")
+    _append_jackets_shoes(looks, constraint_input)
 
     return {
         "bottom": _row_to_item(bottom_row, "bottom"),
@@ -356,7 +356,7 @@ async def suggest_from_photo(file: UploadFile = File(...)):
             })
 
         # add jackets + shoes as extra "bottom" options
-        _append_jackets_shoes(looks, meta, target_key="bottom")
+        _append_jackets_shoes(looks, meta)
 
     elif garment_kind == "bottom":
         style_plan = call_openai_stylist_for_bottom(fake_row)
@@ -372,7 +372,7 @@ async def suggest_from_photo(file: UploadFile = File(...)):
             })
 
         # add jackets + shoes as extra "top" options
-        _append_jackets_shoes(looks, meta, target_key="top")
+        _append_jackets_shoes(looks, meta)
 
     else:
         raise HTTPException(400, f"Unclear garment_kind: {garment_kind}")
