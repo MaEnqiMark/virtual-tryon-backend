@@ -9,6 +9,7 @@ import requests
 import pandas as pd
 from typing import Optional
 import shutil
+import random
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -466,6 +467,33 @@ async def suggest_from_photo(file: UploadFile = File(...)):
         "explanation": explanation,
         "looks": looks,
     }
+
+@app.get("/transparent/list")
+def list_transparent_images():
+    """Return a plain list of all transparent image filenames."""
+    files = sorted(
+        [
+            p.name
+            for p in TRANSPARENT_DIR.glob("*")
+            if p.is_file() and p.suffix.lower() in [".png", ".jpg", ".jpeg"]
+        ]
+    )
+    return files
+
+@app.get("/transparent/random")
+def random_transparent_image():
+    """Return a single random transparent image filename."""
+    files = [
+        p.name
+        for p in TRANSPARENT_DIR.glob("*")
+        if p.is_file() and p.suffix.lower() in [".png", ".jpg", ".jpeg"]
+    ]
+
+    if not files:
+        raise HTTPException(status_code=404, detail="No transparent images available")
+
+    filename = random.choice(files)
+    return {"filename": filename}
 
 
 # =======================================================
