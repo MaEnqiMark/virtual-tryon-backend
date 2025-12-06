@@ -8,6 +8,7 @@ import zipfile
 import requests
 import pandas as pd
 from typing import Optional
+import shutil
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,12 +72,23 @@ def ensure_transparent_images_dataset() -> None:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+            for junk in ["__MACOSX", "transparent_imgs"]:
+                junk_path = TRANSPARENT_DIR / junk
+                if junk_path.exists():
+                    shutil.rmtree(junk_path, ignore_errors=True)
+            # Extract
+            with zipfile.ZipFile(TRANSPARENT_ZIP, "r") as z:
+                count = 0
+                for member in z.namelist():
+                    if member.lower().endswith((".png", ".jpg", ".jpeg")):
+                        src = z.open(member)
+                        dest = TRANSPARENT_DIR / Path(member).name
+                        with open(dest, "wb") as f:
+                            f.write(src.read())
+                        count += 1
 
-        # Extract
-        with zipfile.ZipFile(TRANSPARENT_ZIP, "r") as z:
-            z.extractall(TRANSPARENT_DIR)
+        print(f"[transparent] Extracted {count} transparent images.")
 
-        print("[transparent] Extracted successfully.")
 
     except Exception as e:
         print(f"[transparent] Failed: {e}")
