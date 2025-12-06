@@ -37,15 +37,53 @@ import llm_stylist
 # =======================================================
 
 DATA_ROOT = Path("/data")
+
+ZIP_PATH = DATA_ROOT / "catalog_images.zip"
+JACKETS_SHOES_ZIP = DATA_ROOT / "jackets_shoes.zip"
+TRANSPARENT_ZIP = DATA_ROOT / "transparent_imgs.zip"
+
 IMAGES_DIR = DATA_ROOT / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-ZIP_PATH = DATA_ROOT / "catalog_images.zip"
 
 HISTORY_DIR = DATA_ROOT / "history"
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-JACKETS_SHOES_ZIP = DATA_ROOT / "jackets_shoes.zip"
+TRANSPARENT_DIR = DATA_ROOT / "transparent"
+TRANSPARENT_DIR.mkdir(parents=True, exist_ok=True)
 
+def ensure_transparent_images_dataset() -> None:
+    url = os.environ.get("TRANSPARENT_IMGS_URL")
+    if not url:
+        print("[transparent] TRANSPARENT_IMGS_URL not set — skipping transparent images")
+        return
+
+    # If folder already has PNG files → SKIP
+    pngs = list(TRANSPARENT_DIR.glob("*.png"))
+    if pngs:
+        print(f"[transparent] Found {len(pngs)} transparent images, skipping download.")
+        return
+
+    print(f"[transparent] Downloading transparent garment assets from {url}")
+    try:
+        with requests.get(url, stream=True, timeout=600) as r:
+            r.raise_for_status()
+            with TRANSPARENT_ZIP.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+        # Extract
+        with zipfile.ZipFile(TRANSPARENT_ZIP, "r") as z:
+            z.extractall(TRANSPARENT_DIR)
+
+        print("[transparent] Extracted successfully.")
+
+    except Exception as e:
+        print(f"[transparent] Failed: {e}")
+
+    finally:
+        if TRANSPARENT_ZIP.exists():
+            TRANSPARENT_ZIP.unlink()  # clean up zip
 
 def ensure_jackets_shoes_dataset() -> None:
 
@@ -142,6 +180,7 @@ async def startup_tasks():
     loop = asyncio.get_event_loop()
     loop.create_task(asyncio.to_thread(ensure_images_dataset))
     loop.create_task(asyncio.to_thread(ensure_jackets_shoes_dataset))
+    loop.create_task(asyncio.to_thread(ensure_transparent_images_dataset))
     print("[startup] checks scheduled.")
 
 
@@ -158,7 +197,7 @@ app.add_middleware(
 # Static routes
 app.mount("/static", StaticFiles(directory=str(IMAGES_DIR)), name="static")
 app.mount("/history_static", StaticFiles(directory=str(HISTORY_DIR)), name="history_static")
-
+app.mount("/transparent_static", StaticFiles(directory=str(TRANSPARENT_DIR)), name="transparent_static")
 
 # =======================================================
 # Helpers
