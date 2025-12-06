@@ -3,7 +3,6 @@ uvicorn[standard]
 
 pandas
 numpy
-shutil
 
 python-multipart   # file uploads
 requests           # dataset zip download
